@@ -59,6 +59,9 @@ on:
       block_hosts:
         description: Hosts the app must not reach during tests (analytics, ads), space-separated
         default: "app.posthog.com eu.i.posthog.com us.i.posthog.com graph.facebook.com api.mixpanel.com api2.amplitude.com"
+      web_url:
+        description: "A website to test instead of an app: each iOS agent gets it open in Safari (no build). KLAMPO addition"
+        default: ""
       record_video:
         description: Record each phone's screen (encrypted with the results)
         type: boolean
@@ -136,7 +139,7 @@ jobs:
 
   build-ios:
     needs: plan
-    if: needs.plan.outputs.ios != '[]'
+    if: needs.plan.outputs.ios != '[]' && inputs.web_url == ''
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -268,6 +271,8 @@ jobs:
 
   ios:
     needs: [plan, build-ios]
+    # a website (web_url): no app was built, so build-ios was skipped on purpose
+    if: always() && needs.plan.outputs.ios != '[]' && (inputs.web_url != '' || needs.build-ios.result == 'success')
     runs-on: macos-15
     timeout-minutes: 120
     strategy:
@@ -278,8 +283,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
+        if: inputs.web_url == ''
         with: { name: app-ios }
       - name: Decrypt .app
+        if: inputs.web_url == ''
         env: { ARTIFACT_PASSPHRASE: "${{ secrets.ARTIFACT_PASSPHRASE }}" }
         run: |
           openssl enc -d -aes-256-cbc -pbkdf2 -in app-ios.tgz.enc -out app-ios.tgz -pass env:ARTIFACT_PASSPHRASE
@@ -353,6 +360,7 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           BLOCK_HOSTS: ${{ inputs.block_hosts }}
           RECORD_VIDEO: ${{ inputs.record_video }}
+          WEB_URL: ${{ inputs.web_url }}
         run: bash scripts/ios/run_agent.sh
 
       - name: Encrypt results
